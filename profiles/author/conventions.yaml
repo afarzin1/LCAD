@@ -1,0 +1,146 @@
+# LCAD conventions — author profile
+#
+# The LCAD author's personal conventions. Creating a project copies this file to the project's
+# `profile/conventions.yaml`; the project's copy is then authoritative and can differ
+# (docs/conventions.md). Values the author has stated are mirrored in RULES.md (CV*) so the
+# conflict protocol catches contradictions.
+#
+# Each entry has a status:
+#   stated    — the author said so (RULES.md CV*)
+#   observed  — seen in the author's reference package (examples/reference-package-notes.md),
+#               proposed, not yet confirmed
+#   conflict  — stated and observed disagree; the engine must not use this entry until resolved
+#   to_confirm — a default chosen with no evidence yet
+
+schema: lcad.conventions/v0
+
+# CV1 — I/O class labels. A module's class is derived from the model, never typed in.
+io_classes:
+  status: stated
+  classes:
+    - label: CIO
+      meaning: Chassis I/O, attached to the CPU
+      derive: { topology_parent: cpu }
+    - label: RIO
+      meaning: Remote I/O modules or cards on a remote coupler
+      derive: { topology_parent: coupler, ip_rating_below: IP67 }
+    - label: FIO
+      meaning: Field I/O, IP67, mounted on the machine
+      derive: { ip_rating_at_least: IP67 }
+  numbering:
+    status: observed
+    RIO: "RIO{station:02}{slot:02}"        # coupler is slot 00: RIO1000 coupler, RIO1001 first card
+    FIO: "FIO{segment:02}{position:02}"    # FIO2001; a junction/branch module starts a segment (FIO2100)
+    typical_group_wildcard: "#"            # RIO120# = RIO1201..RIO1208 drawn as one typical
+  safety_marker: { status: observed, mark: "F", where: topology_overview }
+
+# CV2 — wire labels: six digits AAGGSS, one label per potential (ADR 0009).
+wire_labels:
+  status: stated
+  format: "{area:02}{group:02}{seq:02}"   # digits only, no separators, always 6 digits
+  one_label_per: potential                # every conductor on a common node carries the same label
+  io:                                     # potential tied to exactly one I/O terminal and no supply
+    area: module_station                  # RIO1001 -> 10
+    group: module_slot                    # RIO1001 -> 01
+    seq: terminal_index                   # pin index from the part record -> RIO1001 terminal 7 = 100107
+  circuit:                                # every other potential: supplies, returns, commons, interlocks
+    area: cabinet_area                    # set per cabinet; defaults to its first coupler station
+    groups: [90, 99]                      # e.g. 90 = power distribution, others allocated as needed
+    seq: drawing_order                    # first 24 V branch in area 10 -> 109001
+  unique_numbers: [rio_stations, fio_segments, cabinet_areas]   # must not collide; 00 reserved (INV-20)
+  annotation:
+    status: observed
+    stack: [gauge, colour, label]         # "#20AWG" / "BLU" / "100101", at the wire
+  locking: { status: stated, rule: M10 }
+
+# Wire colours and gauges.
+wire_colours:
+  status: observed
+  dc_positive_and_signal: BLU
+  dc_zero_volt: WHT
+  main_dc_feed: { positive: RED, negative: BLK }
+  ground: GRN
+  ORG: to_confirm           # used on high-voltage cabinet circuits
+cable_cores: { status: observed, format: "{colour} ({core})" }   # BLK (7)
+wire_gauges:
+  status: observed
+  signal_and_24v_branch: "#20AWG"
+  ecb_channel_feed: "#14AWG"
+  cabinet_dc_feed: "#10AWG"
+  device_pe: "#16AWG"
+  cabinet_ground: "#3AWG"
+
+# Tags.
+tags:
+  status: observed
+  device: "{function}{number}"          # PLC10, CR10, PT10, VFD1 — no prefix sign
+  number_groups: to_confirm             # the tens digit appears to group related devices
+  cable: ["CBL-{device}-{port}", "CBL-{function}"]      # CBL-PT10-X101, CBL-GTLCK1
+  cable_core: "{cable}({core})"                          # CBL-GTLCK1(4)
+  type_reference: "{THING}_TYP{n}"                       # TBTYP1, CBL_ENT_TYP1, M12CON_TYP1M
+  terminal: "TB{group}-{function}"                       # TB10-ECB2, TB10-24-, TB10-GND
+  network_link: "{device}.{port}/{device}.{port}"        # IPC.X103/RIO1000.X1
+
+# CV3 — package structure (ADR 0010). Sections in order; every page belongs to exactly one.
+package:
+  status: stated
+  sections:
+    - { id: front, area: "00", contains: [cover, drawing_list, general_notes, control_system_overview] }
+    - id: per_cabinet
+      repeat_for: cabinet
+      order: topology                     # cabinets in fieldbus order
+      sections:
+        - { id: exterior, contains: [enclosure_exterior, door_layout] }
+        - { id: interior, contains: [interior_arrangement, mounting_plate_layout] }
+        - { id: assemblies, contains: [{ page_strategy: PS-7 }] }
+        - { id: power, contains: [{ page_strategy: PS-4 }] }
+        - id: io
+          contains: [{ page_strategy: PS-2 }, { page_strategy: PS-3 }, { page_strategy: PS-6 }]
+          order: topology                 # slot order; function pages follow their last module
+          field_io: with_upstream_cabinet  # FIO chains belong to the cabinet they start from
+    - { id: device_overviews, contains: [{ page_strategy: PS-1 }] }
+    - { id: misc, catch_all: true }       # contents reported (C6)
+  not_in_drawing_package: [terminal_plans, wire_lists, cable_schedules, bom]   # workbook / web viewer
+
+# CV4 — drawing IDs: five digits AATNN, generated and locked (ADR 0010).
+drawing_ids:
+  status: stated
+  format: "{area:02}{type:1}{seq:02}"
+  area: { front_matter: "00", cabinet: cabinet_area }   # same area numbers as circuit wire labels
+  types: { 0: cover_and_overviews, 1: exterior, 2: interior, 3: assemblies, 4: power_distribution,
+           5: io_safety_typicals_field_io, 6: device_overview, 9: misc }   # 7-8 reserved
+  seq: package_order                      # allocated once, locked (M10)
+  external_prefix: "{project_code}-"      # file names, web viewer: <project>-10501
+  device_overview_area: device_cabinet_or_00
+
+# CV5 — off-page references: target tag + drawing/sheet.zone (DP6, ADR 0010).
+cross_references:
+  status: stated
+  format: "{tag}  {drawing}/{sheet}.{zone}"      # CR110  11501/1.C4
+  note_format: "SEE {drawing}/{sheet}.{zone}  {drawing_title}"
+  zone: "{row}{column}"                          # C4 on the 8 x 6 grid
+
+# Title block and sheet identity.
+title_block:
+  status: observed
+  position: bottom_right                  # rule D1
+  size_mm: [127, 43]                      # approximate
+  fields: [drawn, checked, approved, issued, revision_table_5_rows, logo, title, dwg_3_lines, drawing_id, scale, sheet_n_of_m, rev]
+  date_format: "YYYY/MM/DD"
+  revisions: { before_release: letters, after_release: numbers }   # A = initial release, 1 = as-built
+  drawing_title: ["CABINET {cabinet}", "{drawing_type}", "{subject}"]
+  sheet_numbering: per_drawing            # sheets "n OF m" within a drawing ID
+  scale_text: "N.T.S"
+
+# Measured drawing style (from the reference DXF).
+drawing_style:
+  status: observed
+  zone_grid: { columns: 8, rows: [A, B, C, D, E, F] }
+  font: ISOCPEUR
+  text_height_mm: { general: 2.0, small_annotation: 1.5, large_label: 5.0, cover_title: 20.0 }
+  io_channel_pitch_mm: 12.13
+  dimensions: "mm [in]"
+  dxf: { model_space: "1:1 mm, one frame per sheet", layouts: "one per sheet, named per sheet" }
+
+# Project-level choices among default drawing-philosophy entries (docs/drawing-philosophy.md).
+drawing_philosophy_overrides: []

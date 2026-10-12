@@ -1,0 +1,82 @@
+# LCAD sourcing policy — author profile
+#
+# This file is configuration, not product code (rule B1, ADR 0004). Creating a machine project
+# copies a profile into the project's `profile/` folder (docs/conventions.md §1); the project's
+# `profile/sourcing.yaml` is then part of its design basis and versioned with it. The values below
+# are the policy the LCAD author's shop uses (rules SP1–SP6 in RULES.md); another organisation
+# makes its own profile.
+#
+# LCAD evaluates this policy deterministically. It records, for every BOM line, which rule selected
+# the part, which supplier and price source were used, and any exception.
+# LCAD never places orders or contacts suppliers (SP5).
+
+schema: lcad.sourcing/v0
+
+# SP1 — the user's reference BOM is the preferred-parts catalog.
+preferred_parts:
+  source: procurement/reference-bom.xlsx   # imported as a versioned catalog
+  copy_quantities: false                   # B3: never copy reference quantities
+  preference_is_not_verification: true     # a listed part still needs ratings/geometry checks
+
+# Selection order for each required item.
+selection_order:
+  - preferred_parts                        # SP1
+  - default_supplier                       # SP2
+  - exception                              # propose an OEM/other source with a recorded reason
+
+# SP2 — unlisted commodity parts.
+default_supplier: mcmaster
+approved_lookup_suppliers:
+  - id: mcmaster
+    name: McMaster-Carr
+    lookup: api_if_approved        # see feasibility notes below
+  - id: digikey
+    name: DigiKey
+    lookup: api
+  - id: mouser
+    name: Mouser
+    lookup: api
+alternative_supplier_requires_reason: true  # e.g. exact part availability, quantity, price, lead time
+
+# Manufacturer constraints (not preferences).
+constraints:
+  - id: SP3
+    category: enclosure
+    allowed_manufacturers: [Saginaw, Rittal]
+    applies_to: [space_estimate, final_selection, substitution, reference_bom_items]
+    on_no_match: unresolved_finding        # never pick another brand without a policy change
+
+# Category-specific commercial rules.
+category_rules:
+  - id: SP4
+    manufacturer: Beckhoff
+    price_source: radwell                  # exact item, condition must match (new vs surplus)
+    lead_time_source: user                 # Radwell stock display does not replace it
+    on_missing_price: pending_user_quote
+  - id: SP5
+    when: not_sold_online
+    price_source: user_quote
+    lead_time_source: user_quote
+    contact_suppliers: never               # outstanding quote requests are tracked, not sent
+
+# Design preferences that drive part selection.
+preferences:
+  - id: SP6
+    category: cable_entry
+    prefer: "Icotek frames with split cord grips"
+    verify_against: oem_documentation      # frame/insert selection checked for the application
+    on_unavailable_from_default_supplier: propose_exception
+
+# Commercial data handling (B2, B6).
+commercial:
+  unknown_is_zero: false
+  statuses: [verified_online, user_quoted, user_supplied, pending_quote, unavailable, stale]
+  record: [source, date, quantity_break, purchase_unit, condition, ship_vs_arrive]
+
+# Feasibility notes, checked Oct 12 2026 (re-verify before Phase 5 implementation):
+# - DigiKey and Mouser offer public product/pricing APIs.
+# - McMaster-Carr's Product Information API is for approved customers only (client certificate,
+#   per-product subscriptions, rate limits). It returns price; lead time/availability is not
+#   documented. Without approval, McMaster prices are entered or confirmed by the user.
+# - No public Radwell API is known. Automated Radwell price retrieval would mean scraping, which
+#   may conflict with the site's terms; default to user-confirmed Radwell prices.

@@ -1,0 +1,12 @@
+# Real-project reference documents and notes that identify them (rule P8).
+# Only de-identified, extracted conventions are committed.
+examples/private/
+
+# Drawing and CAD files never belong in this repository unless redrawn and de-identified;
+# add an explicit exception (!path) for a specific file when that has been done.
+*.pdf
+*.dxf
+*.dwg
+
+# OS clutter
+.DS_Store
